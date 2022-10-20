@@ -37,7 +37,7 @@ import (
 	"unsafe"
 )
 
-const gcDebug = false
+const gcDebug = true
 
 // Some globals + constants for the entire GC.
 
