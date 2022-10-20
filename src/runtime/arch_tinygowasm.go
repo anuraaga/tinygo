@@ -72,16 +72,5 @@ func getCurrentStackPointer() uintptr
 // growHeap tries to grow the heap size. It returns true if it succeeds, false
 // otherwise.
 func growHeap() bool {
-	// Grow memory by the available size, which means the heap size is doubled.
-	memorySize := wasm_memory_size(wasmMemoryIndex)
-	result := wasm_memory_grow(wasmMemoryIndex, memorySize)
-	if result == -1 {
-		// Grow failed.
-		return false
-	}
-
-	setHeapEnd(uintptr(wasm_memory_size(wasmMemoryIndex) * wasmPageSize))
-
-	// Heap has grown successfully.
-	return true
+	return false
 }

@@ -32,8 +32,6 @@ package runtime
 // Moss.
 
 import (
-	"internal/task"
-	"runtime/interrupt"
 	"unsafe"
 )
 
@@ -42,6 +40,7 @@ const gcDebug = false
 // Some globals + constants for the entire GC.
 
 const (
+	heapSize           = 128 * 1024 * 1024
 	wordsPerBlock      = 4 // number of pointers in an allocated block
 	bytesPerBlock      = wordsPerBlock * unsafe.Sizeof(heapStart)
 	stateBits          = 2 // how many bits a block state takes (see blockState type)
@@ -99,7 +98,7 @@ type gcBlock uintptr
 // might not be heap-aligned).
 func blockFromAddr(addr uintptr) gcBlock {
 	if gcAsserts && (addr < heapStart || addr >= uintptr(metadataStart)) {
-		runtimePanic("gc: trying to get block from invalid address")
+		panic("gc: trying to get block from invalid address")
 	}
 	return gcBlock((addr - heapStart) / bytesPerBlock)
 }
@@ -113,7 +112,7 @@ func (b gcBlock) pointer() unsafe.Pointer {
 func (b gcBlock) address() uintptr {
 	addr := heapStart + uintptr(b)*bytesPerBlock
 	if gcAsserts && addr > uintptr(metadataStart) {
-		runtimePanic("gc: block pointing inside metadata")
+		panic("gc: block pointing inside metadata")
 	}
 	return addr
 }
@@ -127,7 +126,7 @@ func (b gcBlock) findHead() gcBlock {
 	}
 	if gcAsserts {
 		if b.state() != blockStateHead && b.state() != blockStateMark {
-			runtimePanic("gc: found tail without head")
+			panic("gc: found tail without head")
 		}
 	}
 	return b
@@ -158,7 +157,7 @@ func (b gcBlock) setState(newState blockState) {
 	stateBytePtr := (*uint8)(unsafe.Pointer(uintptr(metadataStart) + uintptr(b/blocksPerStateByte)))
 	*stateBytePtr |= uint8(newState << ((b % blocksPerStateByte) * stateBits))
 	if gcAsserts && b.state() != newState {
-		runtimePanic("gc: setState() was not successful")
+		panic("gc: setState() was not successful")
 	}
 }
 
@@ -167,7 +166,7 @@ func (b gcBlock) markFree() {
 	stateBytePtr := (*uint8)(unsafe.Pointer(uintptr(metadataStart) + uintptr(b/blocksPerStateByte)))
 	*stateBytePtr &^= uint8(blockStateMask << ((b % blocksPerStateByte) * stateBits))
 	if gcAsserts && b.state() != blockStateFree {
-		runtimePanic("gc: markFree() was not successful")
+		panic("gc: markFree() was not successful")
 	}
 }
 
@@ -175,13 +174,13 @@ func (b gcBlock) markFree() {
 // before calling this function.
 func (b gcBlock) unmark() {
 	if gcAsserts && b.state() != blockStateMark {
-		runtimePanic("gc: unmark() on a block that is not marked")
+		panic("gc: unmark() on a block that is not marked")
 	}
 	clearMask := blockStateMask ^ blockStateHead // the bits to clear from the state
 	stateBytePtr := (*uint8)(unsafe.Pointer(uintptr(metadataStart) + uintptr(b/blocksPerStateByte)))
 	*stateBytePtr &^= uint8(clearMask << ((b % blocksPerStateByte) * stateBits))
 	if gcAsserts && b.state() != blockStateHead {
-		runtimePanic("gc: unmark() was not successful")
+		panic("gc: unmark() was not successful")
 	}
 }
 
@@ -190,6 +189,8 @@ func (b gcBlock) unmark() {
 // any packages the runtime depends upon may not allocate memory during package
 // initialization.
 func initHeap() {
+	heapStart = uintptr(libc_malloc(heapSize))
+	heapEnd = heapStart + heapSize
 	calculateHeapAddresses()
 
 	// Set all block states to 'free'.
@@ -254,14 +255,14 @@ func calculateHeapAddresses() {
 	}
 	if gcAsserts && metadataSize*blocksPerStateByte < numBlocks {
 		// sanity check
-		runtimePanic("gc: metadata array is too small")
+		panic("gc: metadata array is too small")
 	}
 }
 
 // alloc tries to find some free space on the heap, possibly doing a garbage
 // collection cycle if needed. If no space is free, it panics.
 //
-//go:noinline
+//go:linkname alloc runtime.alloc
 func alloc(size uintptr, layout unsafe.Pointer) unsafe.Pointer {
 	if size == 0 {
 		return unsafe.Pointer(&zeroSizedAlloc)
@@ -304,7 +305,7 @@ func alloc(size uintptr, layout unsafe.Pointer) unsafe.Pointer {
 					// Unfortunately the heap could not be increased. This
 					// happens on baremetal systems for example (where all
 					// available RAM has already been dedicated to the heap).
-					runtimePanic("out of memory")
+					panic("out of memory")
 				}
 			}
 		}
@@ -398,37 +399,7 @@ func runGC() (freeBytes uintptr) {
 	// Mark phase: mark all reachable objects, recursively.
 	markStack()
 	markGlobals()
-
-	if baremetal && hasScheduler {
-		// Channel operations in interrupts may move task pointers around while we are marking.
-		// Therefore we need to scan the runqueue seperately.
-		var markedTaskQueue task.Queue
-	runqueueScan:
-		for !runqueue.Empty() {
-			// Pop the next task off of the runqueue.
-			t := runqueue.Pop()
-
-			// Mark the task if it has not already been marked.
-			markRoot(uintptr(unsafe.Pointer(&runqueue)), uintptr(unsafe.Pointer(t)))
-
-			// Push the task onto our temporary queue.
-			markedTaskQueue.Push(t)
-		}
-
-		finishMark()
-
-		// Restore the runqueue.
-		i := interrupt.Disable()
-		if !runqueue.Empty() {
-			// Something new came in while finishing the mark.
-			interrupt.Restore(i)
-			goto runqueueScan
-		}
-		runqueue = markedTaskQueue
-		interrupt.Restore(i)
-	} else {
-		finishMark()
-	}
+	finishMark()
 
 	// Sweep phase: free all non-marked objects and unmark marked objects for
 	// the next collection cycle.
@@ -452,13 +423,13 @@ func markRoots(start, end uintptr) {
 	}
 	if gcAsserts {
 		if start >= end {
-			runtimePanic("gc: unexpected range to mark")
+			panic("gc: unexpected range to mark")
 		}
 		if start%unsafe.Alignof(start) != 0 {
-			runtimePanic("gc: unaligned start pointer")
+			panic("gc: unaligned start pointer")
 		}
 		if end%unsafe.Alignof(end) != 0 {
-			runtimePanic("gc: unaligned end pointer")
+			panic("gc: unaligned end pointer")
 		}
 	}
 
@@ -617,10 +588,7 @@ func sweep() (freeBytes uintptr) {
 // simply returns whether it lies anywhere in the heap. Go allows interior
 // pointers so we can't check alignment or anything like that.
 func looksLikePointer(ptr uintptr) bool {
-	if ptr >= heapStart && ptr < uintptr(metadataStart) {
-		return !isMallocPointer(ptr)
-	}
-	return false
+	return ptr >= heapStart && ptr < uintptr(metadataStart)
 }
 
 // dumpHeap can be used for debugging purposes. It dumps the state of each heap
@@ -651,3 +619,9 @@ func KeepAlive(x interface{}) {
 func SetFinalizer(obj interface{}, finalizer interface{}) {
 	// Unimplemented.
 }
+
+//export malloc
+func libc_malloc(size uintptr) unsafe.Pointer
+
+//export free
+func libc_free(ptr unsafe.Pointer)
