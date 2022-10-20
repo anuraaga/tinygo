@@ -37,7 +37,7 @@ import (
 	"unsafe"
 )
 
-const gcDebug = true
+const gcDebug = false
 
 // Some globals + constants for the entire GC.
 
@@ -617,7 +617,10 @@ func sweep() (freeBytes uintptr) {
 // simply returns whether it lies anywhere in the heap. Go allows interior
 // pointers so we can't check alignment or anything like that.
 func looksLikePointer(ptr uintptr) bool {
-	return ptr >= heapStart && ptr < uintptr(metadataStart)
+	if ptr >= heapStart && ptr < uintptr(metadataStart) {
+		return !isMallocPointer(ptr)
+	}
+	return false
 }
 
 // dumpHeap can be used for debugging purposes. It dumps the state of each heap
