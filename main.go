@@ -168,37 +168,44 @@ func Build(pkgName, outpath string, options *compileopts.Options) error {
 		return err
 	}
 
-	if outpath == "" {
-		if strings.HasSuffix(pkgName, ".go") {
-			// A Go file was specified directly on the command line.
-			// Base the binary name off of it.
-			outpath = filepath.Base(pkgName[:len(pkgName)-3]) + config.DefaultBinaryExtension()
-		} else {
-			// Pick a default output path based on the main directory.
-			outpath = filepath.Base(result.MainDir) + config.DefaultBinaryExtension()
-		}
-	}
+	if result.Binary != "" {
+		// If result.Binary is set, it means there is a build output (elf, hex,
+		// etc) that we need to move to the outpath. If it isn't set, it means
+		// the build output was a .ll, .bc or .o file that has already been
+		// written to outpath and so we don't need to do anything.
 
-	if err := os.Rename(result.Binary, outpath); err != nil {
-		// Moving failed. Do a file copy.
-		inf, err := os.Open(result.Binary)
-		if err != nil {
-			return err
-		}
-		defer inf.Close()
-		outf, err := os.OpenFile(outpath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
-		if err != nil {
-			return err
+		if outpath == "" {
+			if strings.HasSuffix(pkgName, ".go") {
+				// A Go file was specified directly on the command line.
+				// Base the binary name off of it.
+				outpath = filepath.Base(pkgName[:len(pkgName)-3]) + config.DefaultBinaryExtension()
+			} else {
+				// Pick a default output path based on the main directory.
+				outpath = filepath.Base(result.MainDir) + config.DefaultBinaryExtension()
+			}
 		}
 
-		// Copy data to output file.
-		_, err = io.Copy(outf, inf)
-		if err != nil {
-			return err
-		}
+		if err := os.Rename(result.Binary, outpath); err != nil {
+			// Moving failed. Do a file copy.
+			inf, err := os.Open(result.Binary)
+			if err != nil {
+				return err
+			}
+			defer inf.Close()
+			outf, err := os.OpenFile(outpath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+			if err != nil {
+				return err
+			}
 
-		// Check whether file writing was successful.
-		return outf.Close()
+			// Copy data to output file.
+			_, err = io.Copy(outf, inf)
+			if err != nil {
+				return err
+			}
+
+			// Check whether file writing was successful.
+			return outf.Close()
+		}
 	}
 
 	// Move was successful.
@@ -235,8 +242,9 @@ func Test(pkgName string, stdout, stderr io.Writer, options *compileopts.Options
 		flags = append(flags, "-test.benchmem")
 	}
 
+	buf := bytes.Buffer{}
 	passed := false
-	err = buildAndRun(pkgName, config, os.Stdout, flags, nil, 0, func(cmd *exec.Cmd, result builder.BuildResult) error {
+	err = buildAndRun(pkgName, config, &buf, flags, nil, 0, func(cmd *exec.Cmd, result builder.BuildResult) error {
 		if testCompileOnly || outpath != "" {
 			// Write test binary to the specified file name.
 			if outpath == "" {
@@ -308,8 +316,12 @@ func Test(pkgName string, stdout, stderr io.Writer, options *compileopts.Options
 		importPath := strings.TrimSuffix(result.ImportPath, ".test")
 		passed = err == nil
 		if passed {
+			if testVerbose {
+				buf.WriteTo(stdout)
+			}
 			fmt.Fprintf(stdout, "ok  \t%s\t%.3fs\n", importPath, duration.Seconds())
 		} else {
+			buf.WriteTo(stdout)
 			fmt.Fprintf(stdout, "FAIL\t%s\t%.3fs\n", importPath, duration.Seconds())
 		}
 		if _, ok := err.(*exec.ExitError); ok {
@@ -1657,7 +1669,6 @@ func main() {
 		wg.Wait()
 		close(fail)
 		if _, fail := <-fail; fail {
-			fmt.Println("FAIL")
 			os.Exit(1)
 		}
 	case "monitor":
