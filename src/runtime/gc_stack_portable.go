@@ -1,5 +1,5 @@
-//go:build gc.conservative && tinygo.wasm
-// +build gc.conservative,tinygo.wasm
+//go:build tinygo.wasm
+// +build tinygo.wasm
 
 package runtime
 

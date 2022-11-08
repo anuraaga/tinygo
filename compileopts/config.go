@@ -104,18 +104,13 @@ func (c *Config) GC() string {
 // NeedsStackObjects returns true if the compiler should insert stack objects
 // that can be traced by the garbage collector.
 func (c *Config) NeedsStackObjects() bool {
-	switch c.GC() {
-	case "conservative":
-		for _, tag := range c.BuildTags() {
-			if tag == "tinygo.wasm" {
-				return true
-			}
+	for _, tag := range c.BuildTags() {
+		if tag == "tinygo.wasm" {
+			return true
 		}
-
-		return false
-	default:
-		return false
 	}
+
+	return false
 }
 
 // Scheduler returns the scheduler implementation. Valid values are "none",
