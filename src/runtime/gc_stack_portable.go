@@ -41,6 +41,14 @@ func markStack() {
 	if task.OnSystemStack() {
 		markRoots(getCurrentStackPointer(), stackTop)
 	}
+
+	stackObject := stackChainStart
+	for stackObject != nil {
+		start := uintptr(unsafe.Pointer(stackObject)) + unsafe.Sizeof(uintptr(0))*2
+		end := start + stackObject.numSlots*unsafe.Alignof(uintptr(0))
+		markRoots(start, end)
+		stackObject = stackObject.parent
+	}
 }
 
 // trackPointer is a stub function call inserted by the compiler during IR
