@@ -227,6 +227,7 @@ func hashmapInsertIntoNewBucket(m *hashmap, key, value unsafe.Pointer, tophash u
 }
 
 func hashmapGrow(m *hashmap) {
+	println("hashmapGrow", m)
 	// clone map as empty
 	n := *m
 	n.count = 0
@@ -327,18 +328,25 @@ func hashmapDelete(m *hashmap, key unsafe.Pointer, hash uint32) {
 		for i := uintptr(0); i < 8; i++ {
 			slotKeyOffset := unsafe.Sizeof(hashmapBucket{}) + uintptr(m.keySize)*uintptr(i)
 			slotKey := unsafe.Pointer(uintptr(unsafe.Pointer(bucket)) + slotKeyOffset)
+			slotValueOffset := unsafe.Sizeof(hashmapBucket{}) + uintptr(m.keySize)*8 + uintptr(m.valueSize)*uintptr(i)
+			_ = unsafe.Pointer(uintptr(unsafe.Pointer(bucket)) + slotValueOffset)
 			if bucket.tophash[i] == tophash {
 				// This could be the key we're looking for.
 				if m.keyEqual(key, slotKey, uintptr(m.keySize)) {
 					// Found the key, delete it.
 					bucket.tophash[i] = 0
 					m.count--
+					println("delete could find key", m, key, hash)
 					return
+				} else {
+					println("delete found hash match but not key match")
 				}
 			}
 		}
 		bucket = bucket.next
 	}
+
+	println("delete couldn't find key", m)
 }
 
 // Iterate over a hashmap.
@@ -424,6 +432,7 @@ func hashmapBinaryGet(m *hashmap, key, value unsafe.Pointer, valueSize uintptr) 
 		return false
 	}
 	hash := hash32(key, uintptr(m.keySize), m.seed)
+	println("hashmapBinaryGet", m, uintptr(key), m.keySize, hash)
 	return hashmapGet(m, key, value, valueSize, hash)
 }
 
@@ -432,6 +441,7 @@ func hashmapBinaryDelete(m *hashmap, key unsafe.Pointer) {
 		return
 	}
 	hash := hash32(key, uintptr(m.keySize), m.seed)
+	println("hashmapBinaryDelete", m, uintptr(key), m.keySize, hash)
 	hashmapDelete(m, key, hash)
 }
 
