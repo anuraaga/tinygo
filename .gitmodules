@@ -31,3 +31,9 @@
 [submodule "lib/macos-minimal-sdk"]
 	path = lib/macos-minimal-sdk
 	url = https://github.com/aykevl/macos-minimal-sdk.git
+[submodule "src/internal/bdwgc/lib"]
+	path = src/internal/bdwgc/lib
+	url = https://github.com/ivmai/bdwgc.git
+[submodule "lib/bdwgc"]
+	path = lib/bdwgc
+	url = https://github.com/ivmai/bdwgc.git

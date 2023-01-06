@@ -265,6 +265,11 @@ lib/wasi-libc/sysroot/lib/wasm32-wasi/libc.a:
 	@if [ ! -e lib/wasi-libc/Makefile ]; then echo "Submodules have not been downloaded. Please download them using:\n  git submodule update --init"; exit 1; fi
 	cd lib/wasi-libc && make -j4 WASM_CFLAGS="-O2 -g -DNDEBUG -mnontrapping-fptoint -msign-ext" MALLOC_IMPL=none CC=$(CLANG) AR=$(LLVM_AR) NM=$(LLVM_NM)
 
+.PHONY: wasi-bdwgc
+wasi-bdwgc: lib/bdwgc/.libs/libgc-wasi.a
+lib/bdwgc/.libs/libgc-wasi.a: wasi-libc
+	@if [ ! -e lib/bdwgc/autogen.sh ]; then echo "Submodules have not been downloaded. Please download them using:\n  git submodule update --init"; exit 1; fi
+	cd lib/bdwgc && ./autogen.sh &&  CC=$(CLANG) AR=$(LLVM_AR) NM=$(LLVM_NM) CFLAGS="-O2 -DNDEBUG -D_WASI_EMULATED_SIGNAL --target=wasm32-wasi --sysroot=../wasi-libc/sysroot" ./configure --disable-threads --disable-shared --host=i686-pc-linux-gnu && make -j4
 
 # Build the Go compiler.
 tinygo:
