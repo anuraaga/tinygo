@@ -158,6 +158,13 @@ func Build(pkgName, outpath, tmpdir string, config *compileopts.Config) (BuildRe
 		return BuildResult{}, fmt.Errorf("unknown libc: %s", config.Target.Libc)
 	}
 
+	if config.Options.GC == "bdwgc" && config.Target.Libc == "wasi-libc" {
+		path := filepath.Join(root, "lib", "bdwgc", "libs-wasi")
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			return BuildResult{}, fmt.Errorf("could not find wasi-bdwgc, perhaps you need to run `make wasi-bdwgc`?")
+		}
+	}
+
 	optLevel, sizeLevel, _ := config.OptLevels()
 	compilerConfig := &compiler.Config{
 		Triple:          config.Triple(),

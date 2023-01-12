@@ -24,6 +24,7 @@ findLLVMTool = $(call detect,$(1),$(abspath llvm-build/bin/$(1)) $(foreach ver,$
 CLANG ?= $(call findLLVMTool,clang)
 LLVM_AR ?= $(call findLLVMTool,llvm-ar)
 LLVM_NM ?= $(call findLLVMTool,llvm-nm)
+LLVM_RANLIB ?= $(call findLLVMTool,llvm-ranlib)
 
 # Go binary and GOROOT to select
 GO ?= go
@@ -266,10 +267,24 @@ lib/wasi-libc/sysroot/lib/wasm32-wasi/libc.a:
 	cd lib/wasi-libc && make -j4 WASM_CFLAGS="-O2 -g -DNDEBUG -mnontrapping-fptoint -msign-ext" MALLOC_IMPL=none CC=$(CLANG) AR=$(LLVM_AR) NM=$(LLVM_NM)
 
 .PHONY: wasi-bdwgc
-wasi-bdwgc: lib/bdwgc/.libs/libgc-wasi.a
-lib/bdwgc/.libs/libgc-wasi.a: wasi-libc
+wasi-bdwgc: lib/bdwgc/libs-wasi/libgc.a
+lib/bdwgc/libs-wasi/libgc.a: wasi-libc
 	@if [ ! -e lib/bdwgc/autogen.sh ]; then echo "Submodules have not been downloaded. Please download them using:\n  git submodule update --init"; exit 1; fi
-	cd lib/bdwgc && ./autogen.sh &&  CC=$(CLANG) AR=$(LLVM_AR) NM=$(LLVM_NM) CFLAGS="-O2 -DNDEBUG -D_WASI_EMULATED_SIGNAL --target=wasm32-wasi --sysroot=../wasi-libc/sysroot" ./configure --disable-threads --disable-shared --host=i686-pc-linux-gnu && make -j4
+	cd lib/bdwgc && ./autogen.sh &&  \
+	./configure --disable-threads --disable-shared --disable-atomic-uncollectible CC=$(CLANG) AR=$(LLVM_AR) NM=$(LLVM_NM) RANLIB=$(LLVM_RANLIB) CFLAGS="-O2 -g -DNDEBUG -D_WASI_EMULATED_SIGNAL" && \
+	make clean && rm -rf libs-wasi && \
+	make -j4 CFLAGS_EXTRA="--sysroot=../wasi-libc/sysroot --target=wasm32-wasi" && \
+	mv .libs libs-wasi
+
+.PHONY: bdwgc
+bdwgc: lib/bdwgc/libs-native/libgc.a
+lib/bdwgc/libs-native/libgc.a:
+	@if [ ! -e lib/bdwgc/autogen.sh ]; then echo "Submodules have not been downloaded. Please download them using:\n  git submodule update --init"; exit 1; fi
+	cd lib/bdwgc && ./autogen.sh &&  \
+	./configure --disable-shared CC=$(CLANG) AR=$(LLVM_AR) NM=$(LLVM_NM) RANLIB=$(LLVM_RANLIB) CFLAGS="-O2 -g -DNDEBUG" && \
+	make clean && rm -rf libs-native && \
+	make -j4 && \
+	mv .libs libs-native
 
 # Build the Go compiler.
 tinygo:
@@ -397,7 +412,7 @@ endif
 # TODO: parallelize, and only show failing tests (no implied -v flag).
 .PHONY: tinygo-test
 tinygo-test:
-	$(TINYGO) test $(TEST_PACKAGES_HOST) $(TEST_PACKAGES_SLOW)
+	$(TINYGO) test -gc=bdwgc $(TEST_PACKAGES_HOST) $(TEST_PACKAGES_SLOW)
 	@# io/fs requires os.ReadDir, not yet supported on windows or wasi. It also
 	@# requires a large stack-size. Hence, io/fs is only run conditionally.
 	@# For more details, see the comments on issue #3143.

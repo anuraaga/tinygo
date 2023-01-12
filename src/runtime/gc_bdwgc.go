@@ -3,7 +3,7 @@
 package runtime
 
 import (
-	"internal/bdwgc"
+	bdwgc "internal/bdwgc/lib"
 	"unsafe"
 )
 
@@ -31,6 +31,10 @@ func free(ptr unsafe.Pointer) {
 }
 
 func markRoots(start, end uintptr) {
+	// Roots are already registered in bdwgc so we have nothing to do here.
+}
+
+func markRoot(start, end uintptr) {
 	// Roots are already registered in bdwgc so we have nothing to do here.
 }
 
